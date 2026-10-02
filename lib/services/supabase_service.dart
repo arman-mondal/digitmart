@@ -5,59 +5,68 @@ import '../models/profile_model.dart';
 import '../models/chat_model.dart';
 import '../models/message_model.dart';
 import '../models/notification_model.dart';
+import '../models/result.dart';
+import 'app_logger.dart';
 
 class SupabaseService {
   SupabaseClient get client => Supabase.instance.client;
 
-  // Active default user ID fallback for quick walkthrough demo
-  static const String demoUserId = '11111111-1111-1111-1111-111111111111';
-
   User? get currentUser => client.auth.currentUser;
 
   // 1. SUPABASE AUTHENTICATION
-  Future<AuthResponse> signUpWithEmail({
+  Future<AppResult<AuthResponse>> signUpWithEmail({
     required String email,
     required String password,
     required String name,
     String? phone,
-    String locationName = 'New Town, Kolkata',
+    String locationName = 'Kolkata, West Bengal',
   }) async {
-    final response = await client.auth.signUp(
-      email: email,
-      password: password,
-      data: {
-        'name': name,
-        'phone': phone,
-        'location_name': locationName,
-      },
-    );
+    try {
+      final response = await client.auth.signUp(
+        email: email,
+        password: password,
+        data: {
+          'name': name,
+          'phone': phone,
+          'location_name': locationName,
+        },
+      );
 
-    if (response.user != null) {
-      // Upsert profile record in public.profiles
-      await client.from('profiles').upsert({
-        'id': response.user!.id,
-        'name': name,
-        'email': email,
-        'phone': phone,
-        'location_name': locationName,
-        'verification_status': true,
-        'rating': 5.0,
-        'completed_transactions': 0,
-        'bid_reliability': 100,
-      });
+      if (response.user != null) {
+        await client.from('profiles').upsert({
+          'id': response.user!.id,
+          'name': name,
+          'email': email,
+          'phone': phone,
+          'location_name': locationName,
+          'verification_status': false,
+          'rating': 5.0,
+          'completed_transactions': 0,
+          'bid_reliability': 100,
+        });
+      }
+
+      return AppResult.success(response);
+    } catch (e, st) {
+      AppLogger.e('Sign up error', e, st);
+      return AppResult.failure(e.toString());
     }
-
-    return response;
   }
 
-  Future<AuthResponse> signInWithEmail({
+  Future<AppResult<AuthResponse>> signInWithEmail({
     required String email,
     required String password,
   }) async {
-    return await client.auth.signInWithPassword(
-      email: email,
-      password: password,
-    );
+    try {
+      final response = await client.auth.signInWithPassword(
+        email: email,
+        password: password,
+      );
+      return AppResult.success(response);
+    } catch (e, st) {
+      AppLogger.e('Sign in error', e, st);
+      return AppResult.failure(e.toString());
+    }
   }
 
   Future<bool> signInWithGoogle() async {
@@ -67,8 +76,8 @@ class SupabaseService {
         redirectTo: 'com.fixorbid.fix_or_bid://login-callback',
       );
       return res;
-    } catch (e) {
-      print('Google OAuth error: $e');
+    } catch (e, st) {
+      AppLogger.e('Google OAuth error', e, st);
       return false;
     }
   }
@@ -78,24 +87,40 @@ class SupabaseService {
   }
 
   // 2. Fetch User Profile
-  Future<ProfileModel?> getProfile(String userId) async {
+  Future<AppResult<ProfileModel>> getProfile(String userId) async {
     try {
       final response = await client
           .from('profiles')
           .select()
           .eq('id', userId)
           .maybeSingle();
+
       if (response != null) {
-        return ProfileModel.fromJson(response);
+        return AppResult.success(ProfileModel.fromJson(response));
       }
-    } catch (e) {
-      print('Error fetching profile: $e');
+      return AppResult.failure('Profile not found');
+    } catch (e, st) {
+      AppLogger.e('Error fetching profile', e, st);
+      return AppResult.failure('Failed to load profile');
     }
-    return null;
   }
 
-  // 3. Fetch Products with images, auctions, and seller details
-  Future<List<ProductModel>> getProducts({
+  // 3. Fetch Categories
+  Future<List<Map<String, dynamic>>> getCategories() async {
+    try {
+      final data = await client
+          .from('categories')
+          .select()
+          .order('sort_order', ascending: true);
+      return List<Map<String, dynamic>>.from(data);
+    } catch (e, st) {
+      AppLogger.e('Error fetching categories', e, st);
+      return [];
+    }
+  }
+
+  // 4. Fetch Products
+  Future<AppResult<List<ProductModel>>> getProducts({
     String? categoryId,
     String? sellingMode,
     String? searchQuery,
@@ -132,15 +157,15 @@ class SupabaseService {
             p.location.toLowerCase().contains(q)).toList();
       }
 
-      return products;
-    } catch (e) {
-      print('Error fetching products: $e');
-      return [];
+      return AppResult.success(products);
+    } catch (e, st) {
+      AppLogger.e('Error fetching products', e, st);
+      return AppResult.failure('Failed to load products');
     }
   }
 
-  // 4. Fetch Single Product Details
-  Future<ProductModel?> getProductDetails(String productId) async {
+  // 5. Fetch Single Product Details
+  Future<AppResult<ProductModel>> getProductDetails(String productId) async {
     try {
       final data = await client.from('products').select('''
         *,
@@ -149,14 +174,64 @@ class SupabaseService {
         profiles:seller_id(*)
       ''').eq('id', productId).single();
 
-      return ProductModel.fromJson(data);
-    } catch (e) {
-      print('Error fetching product details: $e');
-      return null;
+      return AppResult.success(ProductModel.fromJson(data));
+    } catch (e, st) {
+      AppLogger.e('Error fetching product details', e, st);
+      return AppResult.failure('Product not found');
     }
   }
 
-  // 5. Fetch Bids for an Auction
+  // 6. SERVER-SIDE RPC Bidding (`place_bid`)
+  Future<AppResult<Map<String, dynamic>>> placeBidRpc({
+    required String auctionId,
+    required double amount,
+    double? maxAmount,
+  }) async {
+    try {
+      final response = await client.rpc(
+        'place_bid',
+        params: {
+          'p_auction_id': auctionId,
+          'p_amount': amount,
+          'p_max_amount': maxAmount,
+        },
+      );
+
+      final Map<String, dynamic> result = Map<String, dynamic>.from(response);
+      if (result['success'] == true) {
+        return AppResult.success(result);
+      } else {
+        return AppResult.failure(result['message'] ?? 'Bidding failed.');
+      }
+    } catch (e, st) {
+      AppLogger.e('Error invoking place_bid RPC', e, st);
+      return AppResult.failure(e.toString());
+    }
+  }
+
+  // 7. SERVER-SIDE RPC Buy Now (`buy_now`)
+  Future<AppResult<Map<String, dynamic>>> buyNowRpc(String auctionId) async {
+    try {
+      final response = await client.rpc(
+        'buy_now',
+        params: {
+          'p_auction_id': auctionId,
+        },
+      );
+
+      final Map<String, dynamic> result = Map<String, dynamic>.from(response);
+      if (result['success'] == true) {
+        return AppResult.success(result);
+      } else {
+        return AppResult.failure(result['message'] ?? 'Buy Now failed.');
+      }
+    } catch (e, st) {
+      AppLogger.e('Error invoking buy_now RPC', e, st);
+      return AppResult.failure(e.toString());
+    }
+  }
+
+  // 8. Fetch Bids for an Auction
   Future<List<BidModel>> getAuctionBids(String auctionId) async {
     try {
       final data = await client.from('bids').select('''
@@ -165,14 +240,14 @@ class SupabaseService {
       ''').eq('auction_id', auctionId).order('amount', ascending: false);
 
       return (data as List).map((json) => BidModel.fromJson(json)).toList();
-    } catch (e) {
-      print('Error fetching bids: $e');
+    } catch (e, st) {
+      AppLogger.e('Error fetching bids', e, st);
       return [];
     }
   }
 
-  // 6. Create New Listing
-  Future<String?> createProductListing({
+  // 9. Create New Listing
+  Future<AppResult<String>> createProductListing({
     required String sellerId,
     required String title,
     required String description,
@@ -197,19 +272,18 @@ class SupabaseService {
         'condition': condition,
         'location': location,
         'selling_mode': sellingMode,
+        'fixed_price': fixedPrice,
         'status': 'ACTIVE',
       }).select().single();
 
       final productId = productRes['id'] as String;
 
-      // Add product image
       await client.from('product_images').insert({
         'product_id': productId,
         'image_url': imageUrl,
         'sort_order': 1,
       });
 
-      // If Auction or Fix+Bid, create auction record
       if (sellingMode == 'BID' || sellingMode == 'FIX_AND_BID') {
         final startPrice = startingPrice ?? 1000.0;
         final now = DateTime.now();
@@ -229,14 +303,14 @@ class SupabaseService {
         });
       }
 
-      return productId;
-    } catch (e) {
-      print('Error creating listing: $e');
-      return null;
+      return AppResult.success(productId);
+    } catch (e, st) {
+      AppLogger.e('Error creating listing', e, st);
+      return AppResult.failure(e.toString());
     }
   }
 
-  // 7. Fetch Chats for User
+  // 10. Chats & Messages
   Future<List<ChatModel>> getUserChats(String userId) async {
     try {
       final data = await client.from('chats').select('''
@@ -247,13 +321,12 @@ class SupabaseService {
       ''').or('buyer_id.eq.$userId,seller_id.eq.$userId').order('last_message_at', ascending: false);
 
       return (data as List).map((json) => ChatModel.fromJson(json)).toList();
-    } catch (e) {
-      print('Error fetching chats: $e');
+    } catch (e, st) {
+      AppLogger.e('Error fetching chats', e, st);
       return [];
     }
   }
 
-  // 8. Get or Create Chat between buyer and seller
   Future<ChatModel?> getOrCreateChat({
     required String productId,
     required String buyerId,
@@ -276,7 +349,6 @@ class SupabaseService {
         return ChatModel.fromJson(existing);
       }
 
-      // Create new chat
       final newChat = await client.from('chats').insert({
         'product_id': productId,
         'buyer_id': buyerId,
@@ -291,13 +363,12 @@ class SupabaseService {
       ''').single();
 
       return ChatModel.fromJson(newChat);
-    } catch (e) {
-      print('Error in getOrCreateChat: $e');
+    } catch (e, st) {
+      AppLogger.e('Error in getOrCreateChat', e, st);
       return null;
     }
   }
 
-  // 9. REALTIME MESSAGES STREAM & SEND MESSAGE
   Stream<List<MessageModel>> streamChatMessages(String chatId) {
     return client
         .from('messages')
@@ -327,13 +398,13 @@ class SupabaseService {
       }).eq('id', chatId);
 
       return true;
-    } catch (e) {
-      print('Error sending message: $e');
+    } catch (e, st) {
+      AppLogger.e('Error sending message', e, st);
       return false;
     }
   }
 
-  // 10. Fetch Notifications
+  // 11. Notifications & Watchlist
   Future<List<NotificationModel>> getUserNotifications(String userId) async {
     try {
       final data = await client
@@ -345,13 +416,12 @@ class SupabaseService {
       return (data as List)
           .map((json) => NotificationModel.fromJson(json))
           .toList();
-    } catch (e) {
-      print('Error fetching notifications: $e');
+    } catch (e, st) {
+      AppLogger.e('Error fetching notifications', e, st);
       return [];
     }
   }
 
-  // 11. Watchlist Management
   Future<List<String>> getWatchlistProductIds(String userId) async {
     try {
       final data = await client
@@ -360,8 +430,8 @@ class SupabaseService {
           .eq('user_id', userId);
 
       return (data as List).map((item) => item['product_id'] as String).toList();
-    } catch (e) {
-      print('Error fetching watchlist: $e');
+    } catch (e, st) {
+      AppLogger.e('Error fetching watchlist', e, st);
       return [];
     }
   }
@@ -389,8 +459,8 @@ class SupabaseService {
         });
         return true;
       }
-    } catch (e) {
-      print('Error toggling watchlist: $e');
+    } catch (e, st) {
+      AppLogger.e('Error toggling watchlist', e, st);
       return false;
     }
   }
@@ -413,8 +483,8 @@ class SupabaseService {
         'status': 'PENDING',
       });
       return true;
-    } catch (e) {
-      print('Error submitting report: $e');
+    } catch (e, st) {
+      AppLogger.e('Error submitting report', e, st);
       return false;
     }
   }

@@ -18,8 +18,8 @@ class _LoginOtpScreenState extends State<LoginOtpScreen>
   final SupabaseService _service = SupabaseService();
 
   // Sign In Controllers
-  final _signInEmailCtrl = TextEditingController(text: 'arman@fixorbid.com');
-  final _signInPasswordCtrl = TextEditingController(text: 'Password123!');
+  final _signInEmailCtrl = TextEditingController();
+  final _signInPasswordCtrl = TextEditingController();
 
   // Sign Up Controllers
   final _signUpNameCtrl = TextEditingController();
@@ -27,30 +27,9 @@ class _LoginOtpScreenState extends State<LoginOtpScreen>
   final _signUpPasswordCtrl = TextEditingController();
   final _signUpPhoneCtrl = TextEditingController();
   final _signUpLocationCtrl =
-      TextEditingController(text: 'New Town, Kolkata');
+      TextEditingController(text: 'Kolkata, West Bengal');
 
   bool _isLoading = false;
-
-  final List<Map<String, String>> _demoProfiles = [
-    {
-      'id': '11111111-1111-1111-1111-111111111111',
-      'name': 'Arman Sharma (Buyer & Seller)',
-      'phone': '+91 9876543210',
-      'role': 'Active Buyer (Top bidder on iPhone 14)'
-    },
-    {
-      'id': '22222222-2222-2222-2222-222222222222',
-      'name': 'Rahul Verma (Seller)',
-      'phone': '+91 9830012345',
-      'role': 'Seller of iPhone 14 (32 completed transactions)'
-    },
-    {
-      'id': '33333333-3333-3333-3333-333333333333',
-      'name': 'Priya Patel (Seller)',
-      'phone': '+91 9811122334',
-      'role': 'Seller of MacBook Air M2 & PS5'
-    },
-  ];
 
   @override
   void initState() {
@@ -64,7 +43,7 @@ class _LoginOtpScreenState extends State<LoginOtpScreen>
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Fix or Bid Account Sign In'),
+        title: const Text('Fix or Bid Sign In'),
         bottom: TabBar(
           controller: _tabController,
           indicatorColor: AppTheme.accentAmber,
@@ -82,7 +61,7 @@ class _LoginOtpScreenState extends State<LoginOtpScreen>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             SizedBox(
-              height: 320,
+              height: 330,
               child: TabBarView(
                 controller: _tabController,
                 children: [
@@ -115,6 +94,14 @@ class _LoginOtpScreenState extends State<LoginOtpScreen>
                           onPressed: _isLoading
                               ? null
                               : () async {
+                                  if (_signInEmailCtrl.text.isEmpty ||
+                                      _signInPasswordCtrl.text.isEmpty) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                          content: Text('Enter email and password.')),
+                                    );
+                                    return;
+                                  }
                                   setState(() => _isLoading = true);
                                   try {
                                     final res = await _service.signInWithEmail(
@@ -122,9 +109,9 @@ class _LoginOtpScreenState extends State<LoginOtpScreen>
                                       password:
                                           _signInPasswordCtrl.text.trim(),
                                     );
-                                    if (res.user != null) {
+                                    if (res.isSuccess && res.data?.user != null) {
                                       await appState
-                                          .loadUserProfile(res.user!.id);
+                                          .loadUserProfile(res.data!.user!.id);
                                       if (context.mounted) {
                                         ScaffoldMessenger.of(context)
                                             .showSnackBar(
@@ -136,6 +123,15 @@ class _LoginOtpScreenState extends State<LoginOtpScreen>
                                           ),
                                         );
                                         Navigator.pop(context);
+                                      }
+                                    } else {
+                                      if (context.mounted) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: Text(res.errorMessage ?? 'Sign in failed'),
+                                            backgroundColor: AppTheme.accentRose,
+                                          ),
+                                        );
                                       }
                                     }
                                   } catch (e) {
@@ -210,15 +206,15 @@ class _LoginOtpScreenState extends State<LoginOtpScreen>
                                       phone: _signUpPhoneCtrl.text.trim(),
                                       locationName: _signUpLocationCtrl.text.trim(),
                                     );
-                                    if (res.user != null) {
+                                    if (res.isSuccess && res.data?.user != null) {
                                       await appState
-                                          .loadUserProfile(res.user!.id);
+                                          .loadUserProfile(res.data!.user!.id);
                                       if (context.mounted) {
                                         ScaffoldMessenger.of(context)
                                             .showSnackBar(
                                           const SnackBar(
                                             content: Text(
-                                                'Account created successfully in Supabase!'),
+                                                'Account created successfully!'),
                                             backgroundColor:
                                                 AppTheme.accentEmerald,
                                           ),
@@ -246,7 +242,7 @@ class _LoginOtpScreenState extends State<LoginOtpScreen>
               ),
             ),
 
-            const SizedBox(height: 12),
+            const SizedBox(height: 16),
             Row(
               children: [
                 const Expanded(child: Divider(color: AppTheme.borderDark)),
@@ -258,7 +254,7 @@ class _LoginOtpScreenState extends State<LoginOtpScreen>
                 const Expanded(child: Divider(color: AppTheme.borderDark)),
               ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
 
             // GOOGLE OAUTH BUTTON
             SizedBox(
@@ -288,72 +284,6 @@ class _LoginOtpScreenState extends State<LoginOtpScreen>
                 },
               ),
             ),
-
-            const SizedBox(height: 32),
-            const Divider(color: AppTheme.borderDark),
-            const SizedBox(height: 16),
-
-            Text(
-              'QUICK DEMO WALKTHROUGH PROFILES',
-              style: GoogleFonts.outfit(
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-                color: AppTheme.accentAmber,
-                letterSpacing: 1,
-              ),
-            ),
-            const SizedBox(height: 12),
-
-            ..._demoProfiles.map((p) {
-              final isCurrent = appState.currentProfile?.id == p['id'];
-              return Card(
-                margin: const EdgeInsets.only(bottom: 10),
-                color: isCurrent ? AppTheme.primaryLight : AppTheme.cardDark,
-                child: ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor:
-                        isCurrent ? AppTheme.accentAmber : AppTheme.borderDark,
-                    child: Icon(
-                      Icons.person,
-                      color: isCurrent ? Colors.black : AppTheme.textLight,
-                    ),
-                  ),
-                  title: Text(
-                    p['name']!,
-                    style: GoogleFonts.outfit(
-                      fontWeight: FontWeight.bold,
-                      color: AppTheme.textLight,
-                    ),
-                  ),
-                  subtitle: Text(
-                    p['role']!,
-                    style: GoogleFonts.outfit(
-                      fontSize: 12,
-                      color: AppTheme.textMuted,
-                    ),
-                  ),
-                  trailing: isCurrent
-                      ? const Icon(Icons.check_circle,
-                          color: AppTheme.accentEmerald)
-                      : TextButton(
-                          onPressed: () async {
-                            await appState.switchDemoUser(p['id']!);
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                      'Switched active profile to ${p['name']}'),
-                                  backgroundColor: AppTheme.accentIndigo,
-                                ),
-                              );
-                              Navigator.pop(context);
-                            }
-                          },
-                          child: const Text('Switch'),
-                        ),
-                ),
-              );
-            }).toList(),
           ],
         ),
       ),

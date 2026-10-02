@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/profile_model.dart';
@@ -5,15 +6,19 @@ import '../models/product_model.dart';
 import '../models/notification_model.dart';
 import '../services/supabase_service.dart';
 import '../services/location_service.dart';
+import '../services/app_logger.dart';
 
 class AppStateProvider extends ChangeNotifier {
   final SupabaseService _service = SupabaseService();
+  StreamSubscription<AuthState>? _authSubscription;
 
   ProfileModel? _currentProfile;
   List<ProductModel> _products = [];
+  List<Map<String, dynamic>> _categories = [];
   List<String> _watchlistIds = [];
   List<NotificationModel> _notifications = [];
   bool _isLoading = false;
+  String? _errorMessage;
   String _selectedCategory = 'all';
   String _selectedSellingMode = 'ALL';
   String _searchQuery = '';
@@ -21,47 +26,60 @@ class AppStateProvider extends ChangeNotifier {
 
   ProfileModel? get currentProfile => _currentProfile;
   List<ProductModel> get products => _products;
+  List<Map<String, dynamic>> get categories => _categories;
   List<String> get watchlistIds => _watchlistIds;
   List<NotificationModel> get notifications => _notifications;
   bool get isLoading => _isLoading;
+  String? get errorMessage => _errorMessage;
   String get selectedCategory => _selectedCategory;
   String get selectedSellingMode => _selectedSellingMode;
   String get searchQuery => _searchQuery;
   LocationData? get userLocation => _userLocation;
+
+  bool get isAuthenticated => _service.currentUser != null;
 
   int get unreadNotificationsCount =>
       _notifications.where((n) => !n.isRead).length;
 
   Future<void> init() async {
     _isLoading = true;
+    _errorMessage = null;
     notifyListeners();
 
-    // 1. Check Real Supabase Auth Current User
-    final currentUser = _service.currentUser;
+    // Listen to Supabase Auth State Changes
+    _authSubscription?.cancel();
+    _authSubscription = _service.client.auth.onAuthStateChange.listen((data) async {
+      final AuthChangeEvent event = data.event;
+      final Session? session = data.session;
 
+      AppLogger.i('Auth event: $event, User: ${session?.user.email}');
+
+      if (event == AuthChangeEvent.signedIn || event == AuthChangeEvent.tokenRefreshed) {
+        if (session?.user != null) {
+          await loadUserProfile(session!.user.id);
+        }
+      } else if (event == AuthChangeEvent.signedOut) {
+        _currentProfile = null;
+        _watchlistIds = [];
+        _notifications = [];
+        notifyListeners();
+      }
+    });
+
+    // Check Current Auth User
+    final currentUser = _service.currentUser;
     if (currentUser != null) {
       await loadUserProfile(currentUser.id);
-    } else {
-      // Auto Sign-In Anonymously or fallback to active walkthrough profile
-      try {
-        final res = await Supabase.instance.client.auth.signInAnonymously();
-        if (res.user != null) {
-          await loadUserProfile(res.user!.id);
-        } else {
-          await loadUserProfile(SupabaseService.demoUserId);
-        }
-      } catch (e) {
-        await loadUserProfile(SupabaseService.demoUserId);
-      }
     }
 
-    // 2. Trigger Real GPS Location Detection
+    // Load Database Categories
+    _categories = await _service.getCategories();
+
+    // Detect GPS Location
     await detectRealLocation();
 
-    // 3. Load marketplace data
+    // Load Marketplace Data
     await refreshProducts();
-    await refreshWatchlist();
-    await refreshNotifications();
 
     _isLoading = false;
     notifyListeners();
@@ -86,39 +104,26 @@ class AppStateProvider extends ChangeNotifier {
           createdAt: _currentProfile!.createdAt,
         );
 
-        // Update real location name in Supabase profiles
         try {
           await _service.client.from('profiles').update({
             'location_name': location.locationName,
           }).eq('id', _currentProfile!.id);
-        } catch (_) {}
+        } catch (e) {
+          AppLogger.w('Failed to update location name in DB: $e');
+        }
       }
       notifyListeners();
     }
   }
 
   Future<void> loadUserProfile(String userId) async {
-    _currentProfile = await _service.getProfile(userId);
-    if (_currentProfile == null) {
-      // Create fresh profile in public.profiles for real auth user
-      final user = _service.currentUser;
-      _currentProfile = ProfileModel(
-        id: userId,
-        name: user?.email?.split('@').first ?? 'User',
-        email: user?.email,
-        phone: user?.phone,
-        locationName: _userLocation?.locationName ?? 'New Town, Kolkata',
-        createdAt: DateTime.now(),
-      );
-
-      try {
-        await _service.client.from('profiles').upsert({
-          'id': userId,
-          'name': _currentProfile!.name,
-          'email': user?.email,
-          'location_name': _currentProfile!.locationName,
-        });
-      } catch (_) {}
+    final res = await _service.getProfile(userId);
+    if (res.isSuccess) {
+      _currentProfile = res.data;
+      await refreshWatchlist();
+      await refreshNotifications();
+    } else {
+      AppLogger.w('User profile not found in DB for $userId');
     }
     notifyListeners();
   }
@@ -136,11 +141,18 @@ class AppStateProvider extends ChangeNotifier {
   }
 
   Future<void> refreshProducts() async {
-    _products = await _service.getProducts(
+    _errorMessage = null;
+    final res = await _service.getProducts(
       categoryId: _selectedCategory,
       sellingMode: _selectedSellingMode,
       searchQuery: _searchQuery,
     );
+
+    if (res.isSuccess) {
+      _products = res.data ?? [];
+    } else {
+      _errorMessage = res.errorMessage;
+    }
     notifyListeners();
   }
 
@@ -185,5 +197,19 @@ class AppStateProvider extends ChangeNotifier {
           await _service.getUserNotifications(_currentProfile!.id);
       notifyListeners();
     }
+  }
+
+  Future<void> signOut() async {
+    await _service.signOut();
+    _currentProfile = null;
+    _watchlistIds = [];
+    _notifications = [];
+    notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _authSubscription?.cancel();
+    super.dispose();
   }
 }

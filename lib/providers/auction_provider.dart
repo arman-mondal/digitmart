@@ -26,10 +26,13 @@ class AuctionProvider extends ChangeNotifier {
     _isLoading = true;
     notifyListeners();
 
-    _currentProduct = await _service.getProductDetails(productId);
-    if (_currentProduct?.auction != null) {
-      _bids = await _service.getAuctionBids(_currentProduct!.auction!.id);
-      _startTimer();
+    final res = await _service.getProductDetails(productId);
+    if (res.isSuccess) {
+      _currentProduct = res.data;
+      if (_currentProduct?.auction != null) {
+        _bids = await _service.getAuctionBids(_currentProduct!.auction!.id);
+        _startTimer();
+      }
     }
 
     _isLoading = false;

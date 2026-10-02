@@ -9,6 +9,7 @@ class ProfileModel {
   final int completedTransactions;
   final int bidReliability;
   final String locationName;
+  final bool isAdmin;
   final DateTime createdAt;
 
   ProfileModel({
@@ -18,10 +19,11 @@ class ProfileModel {
     this.email,
     this.profileImage,
     this.verificationStatus = true,
-    this.rating = 4.8,
-    this.completedTransactions = 12,
-    this.bidReliability = 98,
-    this.locationName = 'New Town, Kolkata',
+    this.rating = 5.0,
+    this.completedTransactions = 0,
+    this.bidReliability = 100,
+    this.locationName = 'Kolkata, West Bengal',
+    this.isAdmin = false,
     required this.createdAt,
   });
 
@@ -32,11 +34,12 @@ class ProfileModel {
       phone: json['phone'] as String?,
       email: json['email'] as String?,
       profileImage: json['profile_image'] as String?,
-      verificationStatus: json['verification_status'] as bool? ?? true,
-      rating: (json['rating'] as num?)?.toDouble() ?? 4.8,
-      completedTransactions: json['completed_transactions'] as int? ?? 12,
-      bidReliability: json['bid_reliability'] as int? ?? 98,
-      locationName: json['location_name'] as String? ?? 'New Town, Kolkata',
+      verificationStatus: json['verification_status'] as bool? ?? false,
+      rating: (json['rating'] as num?)?.toDouble() ?? 5.0,
+      completedTransactions: json['completed_transactions'] as int? ?? 0,
+      bidReliability: json['bid_reliability'] as int? ?? 100,
+      locationName: json['location_name'] as String? ?? 'Kolkata, West Bengal',
+      isAdmin: json['is_admin'] as bool? ?? false,
       createdAt: json['created_at'] != null
           ? DateTime.parse(json['created_at'] as String)
           : DateTime.now(),
@@ -55,6 +58,7 @@ class ProfileModel {
       'completed_transactions': completedTransactions,
       'bid_reliability': bidReliability,
       'location_name': locationName,
+      'is_admin': isAdmin,
     };
   }
 }

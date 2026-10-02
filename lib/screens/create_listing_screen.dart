@@ -321,7 +321,7 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
                           if (_formKey.currentState!.validate()) {
                             setState(() => _isSubmitting = true);
 
-                            final productId =
+                            final res =
                                 await _service.createProductListing(
                               sellerId: appState.currentProfile!.id,
                               title: _titleCtrl.text.trim(),
@@ -345,7 +345,7 @@ class _CreateListingScreenState extends State<CreateListingScreen> {
 
                             setState(() => _isSubmitting = false);
 
-                            if (productId != null && context.mounted) {
+                            if (res.isSuccess && context.mounted) {
                               await appState.refreshProducts();
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(

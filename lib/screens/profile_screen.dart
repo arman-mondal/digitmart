@@ -36,19 +36,21 @@ class ProfileScreen extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Text(
-                  profile?.name ?? 'User Profile',
+                  profile?.name ?? (appState.isAuthenticated ? 'User' : 'Guest'),
                   style: GoogleFonts.outfit(
                     fontSize: 22,
                     fontWeight: FontWeight.bold,
                     color: AppTheme.textLight,
                   ),
                 ),
-                const SizedBox(width: 6),
-                const Icon(Icons.verified, size: 20, color: AppTheme.accentEmerald),
+                if (profile?.verificationStatus == true) ...[
+                  const SizedBox(width: 6),
+                  const Icon(Icons.verified, size: 20, color: AppTheme.accentEmerald),
+                ],
               ],
             ),
             Text(
-              profile?.locationName ?? 'New Town, Kolkata',
+              profile?.locationName ?? 'Kolkata, West Bengal',
               style: GoogleFonts.outfit(color: AppTheme.textMuted),
             ),
 
@@ -66,17 +68,34 @@ class ProfileScreen extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
                   _buildStatTile(
-                      '⭐ ${profile?.rating.toStringAsFixed(1) ?? "4.9"}',
+                      '⭐ ${profile?.rating.toStringAsFixed(1) ?? "5.0"}',
                       'Rating'),
                   _buildStatTile(
-                      '${profile?.bidReliability ?? 98}%', 'Bid Reliability'),
+                      '${profile?.bidReliability ?? 100}%', 'Bid Reliability'),
                   _buildStatTile(
-                      '${profile?.completedTransactions ?? 24}', 'Completed Deals'),
+                      '${profile?.completedTransactions ?? 0}', 'Completed Deals'),
                 ],
               ),
             ),
 
             const SizedBox(height: 24),
+
+            if (!appState.isAuthenticated) ...[
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  icon: const Icon(Icons.login, color: Colors.black),
+                  label: const Text('Sign In or Register'),
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const LoginOtpScreen()),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
 
             // SETTINGS & MENU LIST
             _buildMenuItem(
@@ -91,30 +110,20 @@ class ProfileScreen extends StatelessWidget {
               },
             ),
 
-            _buildMenuItem(
-              icon: Icons.switch_account_outlined,
-              title: 'Switch Profile / Role',
-              subtitle: 'Test as Buyer (Arman) or Seller (Rahul)',
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const LoginOtpScreen()),
-                );
-              },
-            ),
-
-            _buildMenuItem(
-              icon: Icons.admin_panel_settings_outlined,
-              title: 'Admin Moderation Center',
-              subtitle: 'Review flagged listings & manage suspensions',
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (_) => const AdminModerationScreen()),
-                );
-              },
-            ),
+            if (profile?.isAdmin == true) ...[
+              _buildMenuItem(
+                icon: Icons.admin_panel_settings_outlined,
+                title: 'Admin Moderation Center',
+                subtitle: 'Review flagged listings & manage suspensions',
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const AdminModerationScreen()),
+                  );
+                },
+              ),
+            ],
 
             _buildMenuItem(
               icon: Icons.help_outline,
@@ -124,6 +133,29 @@ class ProfileScreen extends StatelessWidget {
                 _showHowItWorksDialog(context);
               },
             ),
+
+            if (appState.isAuthenticated) ...[
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppTheme.accentRose,
+                    side: const BorderSide(color: AppTheme.accentRose),
+                  ),
+                  icon: const Icon(Icons.logout, color: AppTheme.accentRose),
+                  label: const Text('Sign Out'),
+                  onPressed: () async {
+                    await appState.signOut();
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Signed out successfully.')),
+                      );
+                    }
+                  },
+                ),
+              ),
+            ],
           ],
         ),
       ),

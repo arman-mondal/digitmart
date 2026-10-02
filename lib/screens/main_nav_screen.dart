@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../config/app_theme.dart';
+import '../utils/auth_guard.dart';
 import 'home_screen.dart';
 import 'search_screen.dart';
 import 'create_listing_screen.dart';
@@ -39,10 +40,17 @@ class _MainNavScreenState extends State<MainNavScreen> {
         onTap: (index) {
           if (index == 2) {
             // Post New Listing CTA
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const CreateListingScreen()),
-            );
+            if (AuthGuard.checkAuth(context)) {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const CreateListingScreen()),
+              );
+            }
+          } else if (index == 4) {
+            // Chat Tab
+            if (AuthGuard.checkAuth(context)) {
+              setState(() => _currentIndex = index);
+            }
           } else {
             setState(() {
               _currentIndex = index;
